@@ -1,4 +1,6 @@
+import React from "react";
 import { useState } from "react";
+
 
 /* ================= REQUIRED HR COLUMNS ================= */
 const REQUIRED_COLUMNS = [
