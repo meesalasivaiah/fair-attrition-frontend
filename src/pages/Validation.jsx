@@ -1,10 +1,14 @@
-import React from "react";
-import { useState } from "react";
+import react from "react";
+import  { useState } from "react";
+
+/* ================= BACKEND URL ================= */
+
+const API_URL = "https://fair-attrition-backend1.onrender.com";
 
 
 /* ================= REQUIRED HR COLUMNS ================= */
+
 const REQUIRED_COLUMNS = [
-  
   "Age",
   "MonthlyIncome",
   "DistanceFromHome",
@@ -17,230 +21,685 @@ const REQUIRED_COLUMNS = [
 
 
 export default function Validation() {
+
   const [csvFile, setCsvFile] = useState(null);
   const [bulkData, setBulkData] = useState(null);
   const [shapData, setShapData] = useState(null);
+
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
+
   const [error, setError] = useState(null);
 
-  /* ================= CSV VALIDATION ================= */
+
+  /* =====================================================
+     CSV VALIDATION
+  ===================================================== */
+
   const validateCsv = async (file) => {
-    if (!file) return "Please upload a CSV file.";
-    if (!file.name.toLowerCase().endsWith(".csv"))
+
+    if (!file) {
+      return "Please upload a CSV file.";
+    }
+
+
+    if (!file.name.toLowerCase().endsWith(".csv")) {
       return "Only CSV files are allowed.";
+    }
+
 
     const text = await file.text();
-    const lines = text.trim().split("\n");
 
-    if (lines.length < 2)
+    const lines = text
+      .trim()
+      .split(/\r?\n/);
+
+
+    if (lines.length < 2) {
       return "CSV must contain header and at least one data row.";
+    }
 
-    const headers = lines[0].split(",").map(h => h.trim());
+
+    const headers = lines[0]
+      .split(",")
+      .map((h) => h.trim());
+
 
     const missingColumns = REQUIRED_COLUMNS.filter(
-      col => !headers.includes(col)
+      (col) => !headers.includes(col)
     );
 
+
     if (missingColumns.length > 0) {
-      return `Invalid HR CSV file.`;
+
+      return `Invalid HR CSV file. Missing columns: ${missingColumns.join(
+        ", "
+      )}`;
     }
 
-    return null; // ✅ VALID CSV
+
+    return null;
   };
 
-  /* ================= PREDICT ================= */
+
+  /* =====================================================
+     PREDICT CSV
+  ===================================================== */
+
   const handlePredict = async () => {
+
     if (!csvFile) {
+
       setError("Please upload a valid HR CSV file.");
+
       return;
     }
 
+
     setLoading(true);
+    setLoadingMessage(
+      "Processing CSV and loading ML models. This may take a little time..."
+    );
+
     setError(null);
+
     setBulkData(null);
     setShapData(null);
 
+
     try {
-      const err = await validateCsv(csvFile);
-      if (err) {
-        setError(err);
+
+      /* -----------------------------
+         Validate CSV
+      ----------------------------- */
+
+      const validationError =
+        await validateCsv(csvFile);
+
+
+      if (validationError) {
+
+        setError(validationError);
+
         setLoading(false);
+        setLoadingMessage("");
+
         return;
       }
 
-      const formData = new FormData();
-      formData.append("file", csvFile);
 
-      const res = await fetch("https://fair-attrition-backend1.onrender.com/predict_csv", {
-        method: "POST",
-        body: formData,
-      });
+      /* -----------------------------
+         FormData
+      ----------------------------- */
+
+      const formData = new FormData();
+
+      formData.append(
+        "file",
+        csvFile
+      );
+
+
+      /* -----------------------------
+         API Request
+      ----------------------------- */
+
+      const res = await fetch(
+        `${API_URL}/predict_csv`,
+        {
+          method: "POST",
+          body: formData
+        }
+      );
+
+
+      /* -----------------------------
+         Read response
+      ----------------------------- */
 
       const data = await res.json();
-      setBulkData(data.predictions);
-    } catch {
-      setError("Server error while predicting.");
-    }
 
-    setLoading(false);
+
+      if (!res.ok) {
+
+        throw new Error(
+          data.error ||
+          "Prediction failed."
+        );
+      }
+
+
+      if (
+        !data.predictions ||
+        !Array.isArray(data.predictions)
+      ) {
+
+        throw new Error(
+          "Invalid prediction response from server."
+        );
+      }
+
+
+      setBulkData(
+        data.predictions
+      );
+
+
+    } catch (err) {
+
+      console.error(
+        "Prediction error:",
+        err
+      );
+
+
+      setError(
+        err.message ||
+        "Server error while predicting."
+      );
+
+
+    } finally {
+
+      setLoading(false);
+      setLoadingMessage("");
+    }
   };
 
-  /* ================= SHAP ================= */
+
+  /* =====================================================
+     SHAP
+  ===================================================== */
+
   const handleBulkShap = async () => {
+
     if (!csvFile) {
-      setError("Upload CSV first.");
+
+      setError(
+        "Upload CSV first."
+      );
+
       return;
     }
 
-    if (shapData) return;
+
+    if (!bulkData) {
+
+      setError(
+        "Please run prediction first."
+      );
+
+      return;
+    }
+
+
+    if (shapData) {
+      return;
+    }
+
 
     setLoading(true);
+
+    setLoadingMessage(
+      "Generating SHAP feature importance. This may take some time..."
+    );
+
     setError(null);
 
-    try {
-      const formData = new FormData();
-      formData.append("file", csvFile);
 
-      const res = await fetch("https://fair-attrition-backend1.onrender.com/shap_global", {
-        method: "POST",
-        body: formData,
-      });
+    try {
+
+      /* -----------------------------
+         FormData
+      ----------------------------- */
+
+      const formData = new FormData();
+
+      formData.append(
+        "file",
+        csvFile
+      );
+
+
+      /* -----------------------------
+         SHAP API
+      ----------------------------- */
+
+      const res = await fetch(
+        `${API_URL}/shap_global`,
+        {
+          method: "POST",
+          body: formData
+        }
+      );
+
 
       const data = await res.json();
+
+
+      if (!res.ok) {
+
+        throw new Error(
+          data.error ||
+          "SHAP generation failed."
+        );
+      }
+
 
       if (!Array.isArray(data)) {
-        setError("SHAP table not generated.");
-        setLoading(false);
-        return;
+
+        throw new Error(
+          "SHAP table not generated."
+        );
       }
 
+
       setShapData(data);
-    } catch {
-      setError("SHAP failed.");
+
+
+    } catch (err) {
+
+      console.error(
+        "SHAP error:",
+        err
+      );
+
+
+      setError(
+        err.message ||
+        "SHAP failed."
+      );
+
+
+    } finally {
+
+      setLoading(false);
+      setLoadingMessage("");
     }
+  };
+
+
+  /* =====================================================
+     RESET
+  ===================================================== */
+
+  const handleReset = () => {
+
+    setCsvFile(null);
+
+    setBulkData(null);
+
+    setShapData(null);
+
+    setError(null);
 
     setLoading(false);
+
+    setLoadingMessage("");
+
+
+    const input =
+      document.getElementById(
+        "csvInput"
+      );
+
+
+    if (input) {
+      input.value = "";
+    }
   };
 
-  /* ================= RESET ================= */
-  const handleReset = () => {
-    setCsvFile(null);
+
+  /* =====================================================
+     FILE SELECT
+  ===================================================== */
+
+  const handleFileChange = (e) => {
+
+    const file =
+      e.target.files?.[0];
+
+
+    setCsvFile(file || null);
+
     setBulkData(null);
+
     setShapData(null);
+
     setError(null);
-    document.getElementById("csvInput").value = "";
   };
+
+
+  /* =====================================================
+     UI
+  ===================================================== */
 
   return (
+
     <div className="min-h-screen p-6">
 
+      {/* ================================================
+          TITLE
+      ================================================= */}
+
       <h1 className="text-4xl font-extrabold text-indigo-800 mb-6 text-center">
+
         Fair-ExplainHR Validation
+
       </h1>
 
-      {/* Upload Section */}
+
+      {/* ================================================
+          UPLOAD SECTION
+      ================================================= */}
+
       <div className="bg-green-200 p-6 rounded-xl shadow mb-6">
+
         <input
           id="csvInput"
           type="file"
           accept=".csv"
-          onChange={(e) => {
-            setCsvFile(e.target.files[0]);
-            setError(null);
-          }}
+          onChange={handleFileChange}
         />
 
-        <div className="mt-4 flex gap-3">
+
+        {/* Selected file */}
+
+        {csvFile && (
+
+          <p className="mt-3 text-gray-700">
+
+            Selected file:
+            <b className="ml-1">
+              {csvFile.name}
+            </b>
+
+          </p>
+
+        )}
+
+
+        {/* ============================================
+            BUTTONS
+        ============================================= */}
+
+        <div className="mt-4 flex gap-3 flex-wrap">
+
+          {/* Predict */}
+
           <button
             onClick={handlePredict}
-            disabled={!csvFile}
-            className={`px-5 py-2 rounded text-white
-              ${csvFile ? "bg-green-600" : "bg-gray-400 cursor-not-allowed"}`}
+            disabled={!csvFile || loading}
+            className={`px-5 py-2 rounded text-white ${
+              csvFile && !loading
+                ? "bg-green-600 hover:bg-green-700"
+                : "bg-gray-400 cursor-not-allowed"
+            }`}
           >
-            Predict
+
+            {loading
+              ? "Processing..."
+              : "Predict"}
+
           </button>
+
+
+          {/* SHAP */}
 
           <button
             onClick={handleBulkShap}
-            disabled={!bulkData || shapData}
-            className="bg-blue-600 disabled:opacity-50 text-white px-5 py-2 rounded"
+            disabled={
+              !bulkData ||
+              shapData ||
+              loading
+            }
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2 rounded"
           >
-            Explain with SHAP
+
+            {loading
+              ? "Please wait..."
+              : "Explain with SHAP"}
+
           </button>
+
+
+          {/* Reset */}
 
           <button
             onClick={handleReset}
-            className="bg-red-600 text-white px-5 py-2 rounded"
+            disabled={loading}
+            className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-5 py-2 rounded"
           >
+
             Reset
+
           </button>
+
         </div>
 
-        {error && <p className="text-red-600 mt-3">{error}</p>}
+
+        {/* ============================================
+            LOADING MESSAGE
+        ============================================= */}
+
+        {loading && (
+
+          <div className="mt-4 p-3 bg-blue-100 border border-blue-300 rounded">
+
+            <p className="text-blue-800 font-medium">
+
+              ⏳ {loadingMessage}
+
+            </p>
+
+            <p className="text-sm text-blue-700 mt-1">
+
+              The first request may take longer because the
+              backend loads the ML models.
+
+            </p>
+
+          </div>
+
+        )}
+
+
+        {/* ============================================
+            ERROR
+        ============================================= */}
+
+        {error && (
+
+          <div className="mt-3 p-3 bg-red-100 border border-red-300 rounded">
+
+            <p className="text-red-700">
+
+              ❌ {error}
+
+            </p>
+
+          </div>
+
+        )}
+
       </div>
 
-      {/* MAIN GRID */}
+
+      {/* ================================================
+          MAIN GRID
+      ================================================= */}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-        {/* Predictions */}
+
+        {/* ==============================================
+            PREDICTIONS
+        ================================================ */}
+
         <div className="bg-white p-6 rounded-xl shadow border">
-          <h2 className="text-xl font-semibold mb-4">📊 Predictions</h2>
+
+          <h2 className="text-xl font-semibold mb-4">
+
+            📊 Predictions
+
+          </h2>
+
 
           {bulkData ? (
-            <table className="min-w-full border">
-              <thead className="bg-blue-100">
-                <tr>
-                  <th className="p-3 border">Employee ID</th>
-                  <th className="p-3 border">Prediction</th>
-                  <th className="p-3 border">Probability</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bulkData.map((row, i) => (
-                  <tr key={i}>
-                    <td className="p-3 border">{row.Employee_ID}</td>
-                    <td className="p-3 border">{row.Prediction}</td>
-                    <td className="p-3 border">{row.Probability}</td>
+
+            <div className="overflow-x-auto">
+
+              <table className="min-w-full border">
+
+                <thead className="bg-blue-100">
+
+                  <tr>
+
+                    <th className="p-3 border">
+                      Employee ID
+                    </th>
+
+                    <th className="p-3 border">
+                      Prediction
+                    </th>
+
+                    <th className="p-3 border">
+                      Probability
+                    </th>
+
                   </tr>
-                ))}
-              </tbody>
-            </table>
+
+                </thead>
+
+
+                <tbody>
+
+                  {bulkData.map(
+                    (row, i) => (
+
+                      <tr
+                        key={i}
+                        className="hover:bg-gray-50"
+                      >
+
+                        <td className="p-3 border">
+                          {row.Employee_ID}
+                        </td>
+
+                        <td className="p-3 border">
+                          {row.Prediction}
+                        </td>
+
+                        <td className="p-3 border">
+                          {row.Probability}
+                        </td>
+
+                      </tr>
+
+                    )
+                  )}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
           ) : (
-            <p className="text-gray-500">Upload valid HR CSV and click Predict.</p>
+
+            <p className="text-gray-500">
+
+              Upload a valid HR CSV and click
+              <b> Predict</b>.
+
+            </p>
+
           )}
+
         </div>
 
-        {/* SHAP */}
+
+        {/* ==============================================
+            SHAP
+        ================================================ */}
+
         <div className="bg-white p-6 rounded-xl shadow border">
-          <h2 className="text-xl font-semibold mb-4">🔍 SHAP Feature Importance</h2>
+
+          <h2 className="text-xl font-semibold mb-4">
+
+            🔍 SHAP Feature Importance
+
+          </h2>
+
 
           {shapData ? (
+
             <div className="overflow-y-auto max-h-[500px]">
+
               <table className="min-w-full border">
+
                 <thead className="bg-indigo-100 sticky top-0">
+
                   <tr>
-                    <th className="p-2 border text-left">Feature</th>
-                    <th className="p-2 border text-right">Mean |SHAP|</th>
+
+                    <th className="p-2 border text-left">
+                      Feature
+                    </th>
+
+                    <th className="p-2 border text-right">
+                      Mean |SHAP|
+                    </th>
+
                   </tr>
+
                 </thead>
+
+
                 <tbody>
-                  {shapData.map((row, i) => (
-                    <tr key={i}>
-                      <td className="p-2 border">{row.feature}</td>
-                      <td className="p-2 border text-right">{row.importance}</td>
-                    </tr>
-                  ))}
+
+                  {shapData.map(
+                    (row, i) => (
+
+                      <tr
+                        key={i}
+                        className="hover:bg-gray-50"
+                      >
+
+                        <td className="p-2 border">
+                          {row.feature}
+                        </td>
+
+                        <td className="p-2 border text-right">
+                          {row.importance}
+                        </td>
+
+                      </tr>
+
+                    )
+                  )}
+
                 </tbody>
+
               </table>
+
             </div>
+
           ) : (
+
             <p className="text-gray-500">
-              Click <b>Explain with SHAP</b> to view feature importance.
+
+              Click
+              <b> Explain with SHAP </b>
+              to view feature importance.
+
             </p>
+
           )}
+
         </div>
 
       </div>
+
     </div>
   );
 }
