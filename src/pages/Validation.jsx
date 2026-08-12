@@ -2,7 +2,7 @@ import React, { useState } from "react";
 
 /* ================= API URL ================= */
 
-const API_URL = "http://192.168.1.16:5000";
+const API_URL = "https://fair-attrition-backend1.onrender.com";
 
 /* ================= REQUIRED HR COLUMNS ================= */
 
